@@ -1,4 +1,4 @@
-# reproducible code for sprinter
+# reproducible code for cheapknockoff
 
 The folder contains code for reproducing numerical studies in [Yu, Witten, and Bien (2020) *Controlling Costs: Feature Selection on a Budget*](https://arxiv.org/abs/1910.03627).
 
