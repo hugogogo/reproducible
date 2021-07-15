@@ -2,7 +2,7 @@
 
 The folder contains code for reproducing numerical studies in [Yu, Bien, and Tibshirani (2019) *Reluctant Interaction Modeling*](https://arxiv.org/abs/1907.08414).
 
-To install `sprintr` from [github](http://github.com), type in R console
+The package `sprintr` contains the implementation of the proposed method. To install `sprintr` from [github](http://github.com), type in R console
 ```R
 devtools::install_github("hugogogo/sprintr", build_vignettes = TRUE)
 ```
