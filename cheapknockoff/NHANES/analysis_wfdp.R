@@ -1,4 +1,5 @@
 #### This is the source code for doing Table 3 (validating Theorem 1 holding for NHANES dataset)
+#### and Figure 3 (now)
 set.seed(123)
 rm(list = ls())
 library(glmnet)
@@ -28,19 +29,19 @@ Sigma <- Sigma + diag(0.1, ncol(Sigma))
 ## run multiple knockoff procedure
 run_mk <- function(x, y, x_te, mu, Sigma, omega, family){
   # construct multiple knockoffs
-  x_k <- cheapknockoff::multiple_knockoff_Gaussian(X = x, 
+  x_k <- cheapknockoff::multiple_knockoff_Gaussian(X = x,
                                       mu = mu,
                                       Sigma = Sigma,
                                       omega = omega)
   # compute knockoff statistics
   stat <- cheapknockoff::stat_glmnet_coef(X = x,
-                                      X_k = x_k, 
+                                      X_k = x_k,
                                       y = y,
                                       omega = omega, nlam = 100, family = family)
-  
+
   # mk filter: compute the path of select variables
   path <- cheapknockoff::generate_path(kappa = stat$kappa, tau = stat$tau)
-  
+
   # given the fitted path of variables, do prediction on the left out data
   result <- cheapknockoff::refit(path = path, x = x, y = y, newdata = x_te, family = family)
   return(result)
@@ -48,22 +49,22 @@ run_mk <- function(x, y, x_te, mu, Sigma, omega, family){
 
 ## run regular knockoff procedure
 run_rk <- function(x, y, x_te, mu, Sigma, family){
-  knockoffs <- function(x) 
+  knockoffs <- function(x)
     create.gaussian(x, mu, Sigma)
-  
-  w <- function(x, x_k, y) 
+
+  w <- function(x, x_k, y)
     suppressWarnings(stat.glmnet_coefdiff(x, x_k, y, nfolds = 5, family = "binomial"))
-  
+
   out = knockoff.filter(x, y, knockoffs = knockoffs, statistic = w)
   # compute the set of select variables
   idx = out$selected
-  
+
   # added a tiny ridge
   mod <- glm(formula = y ~ ., family = family, data = data.frame(y = y, x = x[, idx]))
   pred <- as.numeric(predict(mod, newdata = data.frame(x = x_te[, idx]), type = "response"))
-  
+
   result <- list(path = idx, mod = mod, pred = pred)
-  return(result) 
+  return(result)
 }
 
 ## run logistic regression
@@ -72,11 +73,11 @@ run_lr <- function(x, y, x_te, family){
   #mod <- glmnet(x = x, y = y, family = family, alpha = 0, lambda = 1e-4)
   # given the fitted path of variables, do prediction on the left out data
   pred <- as.numeric(predict(object = mod, newx = x_te, type = "response"))
-  
+
   result <- list()
   result$mod <- mod
   result$pred <- pred
-  return(result) 
+  return(result)
 }
 
 ## compute weighted fdp
@@ -88,18 +89,26 @@ compute_measure <- function(out, costs, truth, alpha = 0.2){
   ubr <- rep(NA, length = p)
   ubo <- rep(NA, length = p)
   cost <- rep(NA, length = p)
+  size <- rep(NA, length = p)
+  #power <- rep(NA, length = p)
   for(i in seq(p)){
     select <- out$path[[i]]
+    size[i] <- length(select)
     cost[i] <- sum(costs[select])
     if(length(select) > 0){
       # index of false discovery
       idx <- setdiff(select, truth)
       wfdp[i] <- sum(costs[idx]) / sum(costs[select])
       fdp[i] <- length(idx) / length(select)
+      #if(length(truth) == 0)
+      #  power[i] <- 0
+      #else
+      #  power[i] <- length(intersect(select, truth)) / length(select)
     }
     else{
       wfdp[i] <- 0
       fdp[i] <- 0
+      #power[i] <- 0
     }
     # upper bounds for ours and Katesvich&Ramdas
     ub[i] <- (1 + (i - length(select))) / max(sum(costs[select]), 1)
@@ -109,8 +118,9 @@ compute_measure <- function(out, costs, truth, alpha = 0.2){
   ubr <- min((-log(alpha)) / log(2 - alpha)  * ubr, 1)
   wo <- costs[-truth]
   ubo <- min(max(wo / log(wo - (wo - 1) * (alpha))) * (-log(alpha)) * ub, 1)
-  
-  return(list(wfdp = wfdp, fdp = fdp, ub = ub, ubr = ubr, ubo = ubo, cost = cost))
+
+  return(list(wfdp = wfdp, fdp = fdp, #power = power,
+              size = size, ub = ub, ubr = ubr, ubo = ubo, cost = cost))
 }
 
 #################################################
@@ -146,8 +156,8 @@ name[head(order(summary(truth)$coefficients[-1, 4]), length(S))]
 # we consider the partially-simulated data
 # i.e., we consider S as the "truth", and simulate data from this truth
 z = a0 + x %*% beta
-pr = 1/(1+exp(-z)) 
-y_sim = rbinom(n, 1, pr)   
+pr = 1/(1+exp(-z))
+y_sim = rbinom(n, 1, pr)
 
 # now we randomly devide the rest 20000 samples into 50 test dataset, each consisting of 400 samples
 idx_te <- seq(n)[-idx_tr]
@@ -160,17 +170,20 @@ uw <- list()
 for(i in seq(length(list_test))){
   x_te <- x[list_test[[i]], ]
   y_te <- as.numeric(y_sim[list_test[[i]]])
-  
+
   ## our method:
   ours[[i]] <- run_mk(x = x_te, y = y_te, x_te = x_te, mu = mu, Sigma = Sigma, omega = costs, family = "binomial")
   ## cheapknockoff with no weights
   uw[[i]] <- run_mk(x = x_te, y = y_te, x_te = x_te, mu = mu, Sigma = Sigma, omega = rep(2, length(costs)), family = "binomial")
+
+  cat(i, fill = TRUE)
 }
 
 
 ###############################################
 # record result
 alpha_list <- seq(0.05, 0.5, by = 0.05)
+
 res_ours <- rep(NA, length(alpha_list))
 res_uw <- rep(NA, length(alpha_list))
 for (j in seq(length(alpha_list))){
@@ -182,15 +195,59 @@ for (j in seq(length(alpha_list))){
   }
   ratio_ours_w <- matrix(NA, nrep, p)
   ratio_ours_r <- matrix(NA, nrep, p)
-  #ratio_uw_w <- matrix(NA, nrep, p)
   ratio_uw_r <- matrix(NA, nrep, p)
   for (i in seq(nrep)){
     ratio_ours_w[i, ] <- out_ours[[i]]$wfdp / out_ours[[i]]$ubo
-    #ratio_ours_r[i, ] <- out_ours[[i]]$fdp / out_ours[[i]]$ubr
-    #ratio_uw_w[i, ] <- out_ours[[i]]$wfdp / out_ours[[i]]$ubo
     ratio_uw_r[i, ] <- out_ours[[i]]$fdp / out_ours[[i]]$ubr
   }
-  
   res_ours[j] <- mean(apply(ratio_ours_w, 1, max) >=1 )
   res_uw[j] <- mean(apply(ratio_uw_r, 1, max) >= 1)
 }
+###############################################
+
+# compare wfdp
+out_ours <- list()
+out_uw <- list()
+wfdp_ours <- rep(0, p)
+wfdp_uw <- rep(0, p)
+cost_ours <- rep(0, p)
+cost_uw <- rep(0, p)
+size_ours <- rep(0, p)
+size_uw <- rep(0, p)
+for(i in seq(nrep)){
+  out_ours[[i]] <- compute_measure(out = ours[[i]], costs = costs, truth = S, alpha = alpha_list[1])
+  out_uw[[i]] <- compute_measure(out = uw[[i]], costs = costs, truth = S, alpha = alpha_list[1])
+
+  wfdp_ours <- wfdp_ours + out_ours[[i]]$wfdp
+  wfdp_uw <- wfdp_uw + out_uw[[i]]$wfdp
+
+  cost_ours <- cost_ours + out_ours[[i]]$cost
+  cost_uw <- cost_uw + out_uw[[i]]$cost
+
+  size_ours <- size_ours + out_ours[[i]]$size
+  size_uw <- size_uw + out_uw[[i]]$size
+}
+wfdp_ours <- wfdp_ours / nrep
+wfdp_uw <- wfdp_uw / nrep
+cost_ours <- cost_ours / nrep
+cost_uw <- cost_uw / nrep
+size_ours <- size_ours / nrep
+size_uw <- size_uw / nrep
+
+pdf("data_wfdp.pdf", height = 8, width = 8)
+par(mfrow = c(1, 1), mar = c(4, 4.5, 1, 1))
+# accuracy
+xlim <- c(0, p)
+ylim <- c(0, max(wfdp_uw))
+plot(x = NULL, y = NULL, xlim = xlim, ylim = ylim, xlab = "k",
+     ylab = "avg wFDP", cex.axis = 2, cex.lab = 2)
+lines(seq(p), wfdp_ours,
+      type = "b", col = "black", ylim = ylim, lwd = 3, pch = 15, cex = 1)
+
+lines(seq(p), wfdp_uw,
+      col = "red", lwd = 3, pch = 17, type = "b", cex = 1)
+
+legend("bottomright",
+       legend = c("Cheap knockoffs", "Katsevich & Ramdas(2018)"),
+       col = c("black", "red"), pch = c(15, 17), cex = 2)
+dev.off()
