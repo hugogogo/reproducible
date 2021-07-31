@@ -90,7 +90,7 @@ compute_measure <- function(out, costs, truth, alpha = 0.2){
   ubo <- rep(NA, length = p)
   cost <- rep(NA, length = p)
   size <- rep(NA, length = p)
-  #power <- rep(NA, length = p)
+  
   for(i in seq(p)){
     select <- out$path[[i]]
     size[i] <- length(select)
@@ -100,15 +100,10 @@ compute_measure <- function(out, costs, truth, alpha = 0.2){
       idx <- setdiff(select, truth)
       wfdp[i] <- sum(costs[idx]) / sum(costs[select])
       fdp[i] <- length(idx) / length(select)
-      #if(length(truth) == 0)
-      #  power[i] <- 0
-      #else
-      #  power[i] <- length(intersect(select, truth)) / length(select)
     }
     else{
       wfdp[i] <- 0
       fdp[i] <- 0
-      #power[i] <- 0
     }
     # upper bounds for ours and Katesvich&Ramdas
     ub[i] <- (1 + (i - length(select))) / max(sum(costs[select]), 1)
@@ -119,7 +114,7 @@ compute_measure <- function(out, costs, truth, alpha = 0.2){
   wo <- costs[-truth]
   ubo <- min(max(wo / log(wo - (wo - 1) * (alpha))) * (-log(alpha)) * ub, 1)
 
-  return(list(wfdp = wfdp, fdp = fdp, #power = power,
+  return(list(wfdp = wfdp, fdp = fdp,
               size = size, ub = ub, ubr = ubr, ubo = ubo, cost = cost))
 }
 
@@ -181,7 +176,7 @@ for(i in seq(length(list_test))){
 
 
 ###############################################
-# record result
+# record result for TABLE 3
 alpha_list <- seq(0.05, 0.5, by = 0.05)
 
 res_ours <- rep(NA, length(alpha_list))
@@ -205,49 +200,93 @@ for (j in seq(length(alpha_list))){
 }
 ###############################################
 
-# compare wfdp
+# compare wfdp quantiles to draw FIGURE 3
 out_ours <- list()
 out_uw <- list()
-wfdp_ours <- rep(0, p)
-wfdp_uw <- rep(0, p)
-cost_ours <- rep(0, p)
-cost_uw <- rep(0, p)
-size_ours <- rep(0, p)
-size_uw <- rep(0, p)
+wfdp_ours <- matrix(0, nrow = nrep, ncol = p)
+wfdp_uw <- matrix(0, nrow = nrep, ncol = p)
+cost_ours <- matrix(0, nrow = nrep, ncol = p)
+cost_uw <- matrix(0, nrow = nrep, ncol = p)
 for(i in seq(nrep)){
   out_ours[[i]] <- compute_measure(out = ours[[i]], costs = costs, truth = S, alpha = alpha_list[1])
   out_uw[[i]] <- compute_measure(out = uw[[i]], costs = costs, truth = S, alpha = alpha_list[1])
-
-  wfdp_ours <- wfdp_ours + out_ours[[i]]$wfdp
-  wfdp_uw <- wfdp_uw + out_uw[[i]]$wfdp
-
-  cost_ours <- cost_ours + out_ours[[i]]$cost
-  cost_uw <- cost_uw + out_uw[[i]]$cost
-
-  size_ours <- size_ours + out_ours[[i]]$size
-  size_uw <- size_uw + out_uw[[i]]$size
+  
+  wfdp_ours[i, ] <- out_ours[[i]]$wfdp
+  wfdp_uw[i, ] <- out_uw[[i]]$wfdp
+  
+  cost_ours[i, ] <- out_ours[[i]]$cost
+  cost_uw[i, ] <- out_uw[[i]]$cost
 }
-wfdp_ours <- wfdp_ours / nrep
-wfdp_uw <- wfdp_uw / nrep
-cost_ours <- cost_ours / nrep
-cost_uw <- cost_uw / nrep
-size_ours <- size_ours / nrep
-size_uw <- size_uw / nrep
 
-pdf("data_wfdp.pdf", height = 8, width = 8)
-par(mfrow = c(1, 1), mar = c(4, 4.5, 1, 1))
+my_quantile <- function(x) quantile(x, probs = c(0.2, 0.5, 0.8))
+quan_ours <- apply(wfdp_ours, 2, my_quantile)
+quan_uw <- apply(wfdp_uw, 2, my_quantile)
+
+pdf("data_wfdp.pdf", height = 5.5, width = 11)
+par(mfrow = c(1, 2))
+par(mar = c(4, 5, 1, 1))
 # accuracy
 xlim <- c(0, p)
-ylim <- c(0, max(wfdp_uw))
+ylim <- c(0, max(quan_uw))
 plot(x = NULL, y = NULL, xlim = xlim, ylim = ylim, xlab = "k",
-     ylab = "avg wFDP", cex.axis = 2, cex.lab = 2)
-lines(seq(p), wfdp_ours,
-      type = "b", col = "black", ylim = ylim, lwd = 3, pch = 15, cex = 1)
+     ylab = expression(wFDP(R[k])), cex.axis = 2, cex.lab = 2)
+lines(seq(p), quan_ours[1, ],
+      type = "o", col = "black", ylim = ylim, lwd = 3, lty = 1,  pch = 4, cex = 1)
 
-lines(seq(p), wfdp_uw,
-      col = "red", lwd = 3, pch = 17, type = "b", cex = 1)
+lines(seq(p), quan_ours[2, ],
+      type = "o", col = "black", ylim = ylim, lwd = 3, lty = 3, pch = 16, cex = 1)
 
-legend("bottomright",
-       legend = c("Cheap knockoffs", "Katsevich & Ramdas(2018)"),
-       col = c("black", "red"), pch = c(15, 17), cex = 2)
+lines(seq(p), quan_ours[3, ],
+      type = "o", col = "black", ylim = ylim, lwd = 3, lty = 6, pch = 17, cex = 1)
+
+lines(seq(p), quan_uw[1, ],
+      type = "o", col = "red", ylim = ylim, lwd = 3, lty = 1, pch = 4, cex = 1)
+
+lines(seq(p), quan_uw[2, ],
+      type = "o", col = "red", ylim = ylim, lwd = 3, lty = 3, pch = 16, cex = 1)
+
+lines(seq(p), quan_uw[3, ],
+      type = "o", col = "red", ylim = ylim, lwd = 3, lty = 6, pch = 17, cex = 1)
+
+
+
+
+quan_ours <- apply(cost_ours, 2, my_quantile)
+quan_uw <- apply(cost_uw, 2, my_quantile)
+# accuracy
+xlim <- c(0, p)
+ylim <- c(0, max(quan_uw))
+plot(x = NULL, y = NULL, xlim = xlim, ylim = ylim, xlab = "k",
+     ylab = expression(cost(R[k])), cex.axis = 2, cex.lab = 2)
+lines(seq(p), quan_ours[1, ],
+      type = "o", col = "black", ylim = ylim, lwd = 3,lty = 1, pch = 4, cex = 1)
+
+lines(seq(p), quan_ours[2, ],
+      type = "o", col = "black", ylim = ylim, lwd = 3, lty = 3, pch = 16, cex = 1)
+
+lines(seq(p), quan_ours[3, ],
+      type = "o", col = "black", ylim = ylim, lwd = 3, lty = 6, pch = 17, cex = 1)
+
+lines(seq(p), quan_uw[1, ],
+      type = "o", col = "red", ylim = ylim, lwd = 3, lty = 1, pch = 4, cex = 1)
+
+lines(seq(p), quan_uw[2, ],
+      type = "o", col = "red", ylim = ylim, lwd = 3, lty = 3, pch = 16, cex = 1)
+
+lines(seq(p), quan_uw[3, ],
+      type = "o", col = "red", ylim = ylim, lwd = 3, lty = 6, pch = 17, cex = 1)
+
+legend("topleft", title="Percentile",
+       legend=c("20", "50", "80"), 
+       col=c(rep("darkgrey",3)),
+       pch = c(4, 16, 17),
+       lwd = c(rep(3, 3)), lty = c(1, 3, 6),
+       bty="n", border=F, cex = 1.5)
+
+legend("bottomright", 
+       legend=c("Cheap knockoffs", "Katsevich & Ramdas(2018)"), 
+       col=c('black','red'),
+       lwd = c(3, 3),
+       bty="n", border=F, cex = 1.3)
+
 dev.off()
