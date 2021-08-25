@@ -6,6 +6,7 @@ library(glmnet)
 library(cheapknockoff)
 library(knockoff)
 library(ROCR)
+library(rbenchmark)
 load("diabetes.RData")
 
 # for simplicity, just consider all the real-valued features
@@ -174,6 +175,27 @@ for(i in seq(length(list_test))){
   cat(i, fill = TRUE)
 }
 
+#### we also compare the wall clock running time of our proposal
+# we use rbenchmark
+benchmark("ours" = {
+  for(i in seq(length(list_test))){
+    x_te <- x[list_test[[i]], ]
+    y_te <- as.numeric(y_sim[list_test[[i]]])
+    
+    ## our method:
+    run_mk(x = x_te, y = y_te, x_te = x_te, mu = mu, Sigma = Sigma, omega = costs, family = "binomial")
+  }
+}, "uw" = {
+  for(i in seq(length(list_test))){
+    x_te <- x[list_test[[i]], ]
+    y_te <- as.numeric(y_sim[list_test[[i]]])
+    
+    ## unweighted method:
+    run_mk(x = x_te, y = y_te, x_te = x_te, mu = mu, Sigma = Sigma, omega = rep(2, length(costs)), family = "binomial")
+  }
+}, replications = 1, 
+  columns = c("test", "replications", "elapsed",
+            "relative", "user.self", "sys.self"))
 
 ###############################################
 # record result for TABLE 3
